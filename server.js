@@ -25,9 +25,7 @@ const listOfCoins = {
 
 app.get('/', (req, res) => res.send('Hello now!'))
 
-app.get('/list', (req, res) => {
-	return listOfCoins
-})
+app.get('/list', (req, res) => res.send(listOfCoins)
 
 app.get('/db', (req, res) => res.send(MONGO_URI))
 
