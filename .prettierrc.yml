@@ -1,0 +1,10 @@
+# .prettierrc
+printWidth: 80
+parser: flow
+tabWidth: 1
+useTabs: true
+semi: false
+singleQuote: true
+trailingComma: all
+bracketSpacing: true
+
