@@ -11,7 +11,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nf run NODE_ENV=development nodemon server.js",
     "predeploy": "now scale chart-the-stock-market.now.sh 0",
-    "deploy": "now -e NODE_ENV='production' --token $NOW_TOKEN --npm --public",
+    "deploy": "now -e NODE_ENV='production' -e MONGO_URI=$MONGO_URI --token $NOW_TOKEN --npm --public",
     "alias": "now alias --token=$NOW_TOKEN",
     "start": "node server.js"
   },
