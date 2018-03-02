@@ -5,20 +5,21 @@ const MongoClient = require('mongodb').MongoClient
 const app = express()
 app.use(bodyParser.json())
 
-const mongoUri = process.env.MONGO_URI
+const MONGO_URI = process.env.MONGO_URI
+const PORT = process.env.NODE_ENV === 'production' ? 443 : 3000
 
 const listOfCoins = {
 	BTC: {
 		name: 'Bitcoin',
-		code: BTC,
+		code: 'BTC',
 	},
 	LTC: {
 		name: 'Litecoin',
-		code: LTC,
+		code: 'LTC',
 	},
 	ETC: {
 		name: 'Etherium',
-		code: ETC,
+		code: 'ETC',
 	},
 }
 
@@ -42,4 +43,4 @@ app.post('/remove_coin', (req, res) => {
 	listOfCoins = listOfCoins.filter(coin => coin.code === coinCode)
 })
 
-app.listen(3000, () => console.log('Example app listening on port 3000!'))
+app.listen(PORT, () => console.log(`Example app listening on port ${PORT}!`))
