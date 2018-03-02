@@ -29,6 +29,8 @@ app.get('/list', (req, res) => {
 	return listOfCoins
 })
 
+app.get('/db', (req, res) => res.send(MONGO_URI))
+
 app.post('/add_coin', (req, res) => {
 	const coinCode = req.body.coinCode
 	// TODO: Check the database to see if this coin exists
