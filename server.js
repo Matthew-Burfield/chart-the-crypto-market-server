@@ -1,6 +1,8 @@
-const express = require('express')
+const axios = require('axios')
 const bodyParser = require('body-parser')
+const express = require('express')
 const MongoClient = require('mongodb').MongoClient
+const coins = require('./coinsList')
 
 const app = express()
 app.use(bodyParser.json())
@@ -22,6 +24,8 @@ const listOfCoins = {
 		code: 'ETC',
 	},
 }
+
+app.get('/fullCoinList', (req, res) => res.json(coins))
 
 app.get('/', (req, res) => res.send('Hello now!'))
 

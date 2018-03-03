@@ -25,6 +25,7 @@
   },
   "homepage": "https://github.com/Matthew-Burfield/chart-the-crypto-market-server#readme",
   "dependencies": {
+    "axios": "0.18.0",
     "body-parser": "1.18.2",
     "express": "4.16.2",
     "mongodb": "3.0.3",
