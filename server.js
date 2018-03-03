@@ -3,6 +3,7 @@ const bodyParser = require('body-parser')
 const express = require('express')
 const MongoClient = require('mongodb').MongoClient
 const coins = require('./coinsList')
+const differenceInCalendarDays = require('date-fns/difference_in_calendar_days')
 
 const app = express()
 app.use(bodyParser.json())
@@ -46,14 +47,51 @@ app.post('/add_coin', async (req, res) => {
 				if (
 					lastFetchDate.getDate() === startOfToday.getDate() &&
 					lastFetchDate.getMonth() === startOfToday.getMonth() &&
-					lastFetchDate.getFullYear() === startOfDay.getFullYear()
+					lastFetchDate.getFullYear() === startOfToday.getFullYear()
 				) {
 					res.json(results)
 					console.log('here')
 				} else {
 					// We don't have the lastest, so we need to get from lastFetchDate, to now
 					console.log('updating...')
-					res.send('nothing here yet')
+					const limit = differenceInCalendarDays(startOfToday, lastFetchDate)
+					axios
+						.get(
+							`https://min-api.cryptocompare.com/data/histoday?fsym=${symbol}&tsym=USD&limit=${limit}&`,
+						)
+						.then(result => result.data)
+						.then(async data => {
+							try {
+								const updatedHistoryWithLastFetchedDateRemoved = data.Data.filter(
+									item => item.time !== results[0].timeTo,
+								)
+								const update = await historicQuotesCollection.updateOne(
+									{ symbol },
+									{
+										$set: {
+											timeTo: data.TimeTo,
+										},
+										$push: {
+											history: {
+												$each: updatedHistoryWithLastFetchedDateRemoved,
+											},
+										},
+									},
+									{
+										upsert: true,
+									},
+								)
+								console.log(update)
+								res.json({
+									success: true,
+								})
+							} catch (err) {
+								returnError(res, err)
+							}
+						})
+						.catch(err => {
+							returnError(res, err)
+						})
 				}
 			} else {
 				// We don't have the coin so we definitely need to fetch it
