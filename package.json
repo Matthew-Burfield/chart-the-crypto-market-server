@@ -12,6 +12,7 @@
     "dev": "nf run NODE_ENV=development nodemon server.js",
     "deploy": "now -e NODE_ENV='production' -e MONGO_URI=$MONGO_URI --npm --public --token $NOW_TOKEN",
     "alias": "now alias --token=$NOW_TOKEN",
+    "postalias": "now rm --token=$NOW_TOKEN $(node_modules/now-no-alias/index.js --token $NOW_TOKEN| node_modules/json/lib/json.js -a uid) -y",
     "start": "node server.js"
   },
   "repository": {
@@ -28,8 +29,10 @@
     "axios": "0.18.0",
     "body-parser": "1.18.2",
     "express": "4.16.2",
+    "json": "9.0.6",
     "mongodb": "3.0.3",
-    "now": "10.1.2"
+    "now": "10.1.2",
+    "now-no-alias": "1.0.4"
   },
   "devDependencies": {
     "eslint": "4.18.2",
