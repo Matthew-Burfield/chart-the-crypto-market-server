@@ -10,6 +10,7 @@ app.use(bodyParser.json())
 
 const MONGO_URI = process.env.MONGO_URI
 const PORT = process.env.NODE_ENV === 'production' ? 443 : 3000
+const DATABASE = 'chart-the-crypto-market'
 
 const listOfCoins = {}
 
@@ -18,6 +19,41 @@ app.get('/', (req, res) => res.send('Hello now!'))
 app.get('/fullCoinList', (req, res) => res.json(coins))
 
 app.get('/list', (req, res) => res.send(listOfCoins))
+
+const getDatabaseCollection = async collectionName => {
+	try {
+		const database = await MongoClient.connect(MONGO_URI)
+		return database.db('chart-the-crypto-market').collection('History')
+	} catch (err) {
+		return err
+	}
+}
+
+const queryCollection = async (collection, query) => {
+	return await collection.findOne(query)
+}
+
+const daysAreTheSame = (date1, date2) => {
+	return (
+		date1.getDate() === date2.getDate() &&
+		date1.getMonth() === date2.getMonth() &&
+		date1.getFullYear() === date2.getFullYear()
+	)
+}
+
+const getCurrentUTCTime = () => {
+	const now = new Date() // contains timezone
+	const timeZoneOffset = now.getTimezoneOffset() * 60 * 1000 // adjusted to milliseconds
+	return now.getTime() + timeZoneOffset
+}
+
+const isDefined = prop => prop !== null && typeof prop !== 'undefined'
+
+const logger = message => {
+	if (process.env.NODE_ENV !== 'production') {
+		console.log(message)
+	}
+}
 
 app.post('/add_coin', async (req, res) => {
 	const symbol = req.body.symbol
@@ -29,110 +65,90 @@ app.post('/add_coin', async (req, res) => {
 	}
 	// TODO: Check the database to see if this coin exists
 	try {
-		const database = await MongoClient.connect(MONGO_URI)
-		const historicQuotesCollection = database
-			.db('chart-the-crypto-market')
-			.collection('History')
-		try {
-			const results = await historicQuotesCollection
-				.find({
-					symbol,
-				})
-				.toArray()
-			if (results.length > 0) {
-				// Yay, we have the coin
-				// If the last time we retrieved data is today, then just return, otherwise we need to update
-				const lastFetchDate = new Date(results[0].timeTo * 1000)
-				const startOfToday = new Date()
-				if (
-					lastFetchDate.getDate() === startOfToday.getDate() &&
-					lastFetchDate.getMonth() === startOfToday.getMonth() &&
-					lastFetchDate.getFullYear() === startOfToday.getFullYear()
-				) {
-					res.json(results)
-					console.log('here')
-				} else {
-					// We don't have the lastest, so we need to get from lastFetchDate, to now
-					console.log('updating...')
-					const limit = differenceInCalendarDays(startOfToday, lastFetchDate)
-					axios
-						.get(
-							`https://min-api.cryptocompare.com/data/histoday?fsym=${symbol}&tsym=USD&limit=${limit}&`,
-						)
-						.then(result => result.data)
-						.then(async data => {
-							try {
-								const updatedHistoryWithLastFetchedDateRemoved = data.Data.filter(
-									item => item.time !== results[0].timeTo,
-								)
-								const update = await historicQuotesCollection.updateOne(
-									{ symbol },
-									{
-										$set: {
-											timeTo: data.TimeTo,
-										},
-										$push: {
-											history: {
-												$each: updatedHistoryWithLastFetchedDateRemoved,
-											},
-										},
-									},
-									{
-										upsert: true,
-									},
-								)
-								console.log(update)
-								res.json({
-									success: true,
-								})
-							} catch (err) {
-								returnError(res, err)
-							}
-						})
-						.catch(err => {
-							returnError(res, err)
-						})
-				}
+		const historicQuotesCollection = await getDatabaseCollection('History')
+		const coinsHistoricQuotes = await queryCollection(historicQuotesCollection, {
+			symbol,
+		})
+		logger(`historicQuotes is defined: ${isDefined(coinsHistoricQuotes)}`)
+		if (isDefined(coinsHistoricQuotes)) {
+			// Yay, we have the coin
+			// If the last time we retrieved data is today, then just return, otherwise we need to update
+			const lastFetchDate = new Date(coinsHistoricQuotes.timeTo * 1000)
+			const startOfToday = new Date(getCurrentUTCTime())
+			if (daysAreTheSame(lastFetchDate, startOfToday)) {
+				logger('here')
+				res.json(coinsHistoricQuotes)
 			} else {
-				// We don't have the coin so we definitely need to fetch it
-				axios
-					.get(
-						`https://min-api.cryptocompare.com/data/histoday?fsym=${symbol}&tsym=USD&limit=1`,
-					)
-					.then(result => result.data)
-					.then(async data => {
-						// We have the data, so save back to local db
-						console.log(data)
-						try {
-							const update = await historicQuotesCollection.updateOne(
-								{ symbol },
-								{
-									$set: {
-										symbol,
-										timeFrom: data.TimeFrom,
-										timeTo: data.TimeTo,
-										history: data.Data,
-										conversionTo: 'USD',
-									},
-								},
-								{
-									upsert: true,
-								},
-							)
-							console.log(update)
-							res.json({
-								success: true,
-							})
-						} catch (err) {
-							returnError(res, err)
-						}
-					})
-					.catch(err => {
-						returnError(res, err)
-					})
+				// We don't have the lastest, so we need to get from lastFetchDate, to now
+				logger('updating...')
+				const limit = differenceInCalendarDays(startOfToday, lastFetchDate)
+				const uri = `https://min-api.cryptocompare.com/data/histoday?fsym=${symbol}&tsym=USD&limit=${limit}&`
+				logger(uri)
+				const coinsHistoricQuoteUpdates = await axios.get(uri)
+				const updatedHistoryWithLastFetchedDateRemoved = coinsHistoricQuoteUpdates.data.Data.filter(
+					item => item.time !== coinsHistoricQuotes.timeTo,
+				)
+				logger(`Old timeTo: ${coinsHistoricQuotes.timeTo}`)
+				logger(`New timeTo: ${coinsHistoricQuoteUpdates.data.TimeTo}`)
+				logger(updatedHistoryWithLastFetchedDateRemoved)
+				const update = await historicQuotesCollection.updateOne(
+					{ symbol },
+					{
+						$set: {
+							timeTo: coinsHistoricQuoteUpdates.data.TimeTo,
+						},
+						$push: {
+							history: {
+								$each: updatedHistoryWithLastFetchedDateRemoved,
+							},
+						},
+					},
+					{
+						upsert: true,
+					},
+				)
+				logger('Updated to db!')
+				const newCoinsHistoryQuotes = {
+					...coinsHistoricQuotes,
+					timeTo: coinsHistoricQuoteUpdates.data.TimeTo,
+					history: [
+						...coinsHistoricQuotes.history,
+						...updatedHistoryWithLastFetchedDateRemoved,
+					],
+				}
+				res.json({
+					success: true,
+					data: newCoinsHistoryQuotes,
+				})
 			}
-		} catch (err) {
-			returnError(res, err)
+		} else {
+			// We don't have the coin so we definitely need to fetch it
+			const coinsHistoricQuotes = await axios.get(
+				`https://min-api.cryptocompare.com/data/histoday?fsym=${symbol}&tsym=USD&limit=1`,
+			)
+			// We have the data, so save back to local db
+			logger('Have fetched the new coin!')
+			const newCoinsHistoryQuotes = {
+				symbol,
+				timeFrom: coinsHistoricQuotes.data.TimeFrom,
+				timeTo: coinsHistoricQuotes.data.TimeTo,
+				history: coinsHistoricQuotes.data.Data,
+				conversionTo: 'USD',
+			}
+			const update = await historicQuotesCollection.updateOne(
+				{ symbol },
+				{
+					$set: newCoinsHistoryQuotes,
+				},
+				{
+					upsert: true,
+				},
+			)
+			logger('Updated new coin to db!')
+			res.json({
+				success: true,
+				data: newCoinsHistoryQuotes,
+			})
 		}
 	} catch (err) {
 		returnError(res, err)
@@ -145,7 +161,7 @@ app.post('/add_coin', async (req, res) => {
 })
 
 const returnError = (res, err) => {
-	console.log(err)
+	logger(err)
 	res.json({
 		Error: err,
 	})
@@ -156,4 +172,4 @@ app.post('/remove_coin', (req, res) => {
 	listOfCoins = listOfCoins.filter(coin => coin.code === coinCode)
 })
 
-app.listen(PORT, () => console.log(`Example app listening on port ${PORT}!`))
+app.listen(PORT, () => logger(`Example app listening on port ${PORT}!`))
