@@ -4,13 +4,14 @@ const express = require('express')
 const coins = require('./coinsList')
 const differenceInCalendarDays = require('date-fns/difference_in_calendar_days')
 const utilities = require('./utilities')
+const currencyList = require('./currencyList')
 
 const app = express()
 app.use(bodyParser.json())
 
 const PORT = process.env.NODE_ENV === 'production' ? 443 : 3000
 const INITIAL_HISTORY_LIMIT = 5
-const LAST_FETCH_DATE = new Date('2000-01-01')
+const TEST_TO_TS = 1520812800
 
 app.get('/', (req, res) => res.send('Hello now!'))
 
@@ -21,66 +22,83 @@ app.get('/fullCoinList', (req, res) => {
 	})
 })
 
-function test(symbol, limit) {
-	return axios.get(
-		`https://min-api.cryptocompare.com/data/histoday?fsym=${symbol}&tsym=USD&limit=${limit}`,
-	)
-}
-
-const getLatestDataForCoins = async coinsToFetch => {
-	console.log('coins to fetch: ', coinsToFetch)
+const getOutOfDateCoinsFromCurrentList = () => {
 	const today = new Date(utilities.getCurrentUTCTime())
-	const uris = coinsToFetch.map(coin => {
-		const limit = differenceInCalendarDays(today, new Date(coin.timeTo * 1000))
-		return test(coin.symbol, limit)
-	})
-	console.log('uris: ', uris)
-	const coinsHistoricQuoteUpdates = await axios.all(uris).then(
-		axios.spread((...args) => {
-			// Both requests are now complete
-			return args.map(item => item.data.Data)
-		}),
-	)
-	utilities.logger('Fetched all coins!', coinsHistoricQuoteUpdates)
-	const updatedHistoryWithLastFetchedDateRemoved = coinsHistoricQuoteUpdates.filter(
-		item => item.time !== coinsHistoricQuotes.timeTo,
-	)
-	utilities.logger(`Old timeTo: ${coinsHistoricQuotes.timeTo}`)
-	utilities.logger(`New timeTo: ${coinsHistoricQuoteUpdates.data.TimeTo}`)
-	// utilities.logger(updatedHistoryWithLastFetchedDateRemoved)
-	const update = await historicQuotesCollection.updateOne(
-		{ symbol },
-		{
-			$set: {
-				timeTo: coinsHistoricQuoteUpdates.data.TimeTo,
-			},
-			$push: {
-				history: {
-					$each: updatedHistoryWithLastFetchedDateRemoved,
-				},
-			},
-		},
-		{
-			upsert: true,
-		},
-	)
-}
-
-app.get('/list', (req, res) => {
-	// TODO: check the last fetch date of the list of coins.
-	// If the date is older than today, we need to get the latest values
-	// Orrr...store a lastFetched value in the DB/on node server for a quicker check
-	const today = new Date('2018-03-15')
-	const outOfDateCoins = Object.values(utilities.getCurrentCoins()).filter(
+	const outOfDateCoins = Object.values(currencyList.getAll()).filter(
 		coin => !utilities.daysAreTheSame(today, new Date(coin.timeTo * 1000)),
 	)
 	if (outOfDateCoins.length > 0) {
 		utilities.logger(
 			`${outOfDateCoins.length} coins are out of date and need updating!`,
 		)
-		getLatestDataForCoins(outOfDateCoins)
+		return getLatestDataForCurrentCoins(outOfDateCoins)
 	}
-	res.send({ success: true, data: utilities.getCurrentCoins() })
+}
+
+const getLatestDataForCurrentCoins = async coinsToFetch => {
+	console.log('coins to fetch: ', coinsToFetch)
+	const today = new Date(utilities.getCurrentUTCTime())
+	const fetchedCoinPromises = coinsToFetch.map(coin => {
+		const limit = differenceInCalendarDays(today, new Date(coin.timeTo * 1000))
+		return axios.get(
+			`https://min-api.cryptocompare.com/data/histoday?fsym=${
+				coin.symbol
+			}&tsym=USD&limit=${limit}`,
+		)
+	})
+	const coinsHistoricQuoteUpdates = await axios.all(fetchedCoinPromises).then(
+		axios.spread((...args) => {
+			// Both requests are now complete
+			return args.map(item => item.data)
+		}),
+	)
+	utilities.logger('Fetched all coins!', coinsHistoricQuoteUpdates)
+
+	// Save all coins to DB and update current coin list
+	const [
+		database,
+		historicQuotesCollection,
+	] = await utilities.getDatabaseCollection('History')
+	return coinsHistoricQuoteUpdates.forEach(async (updatedCoin, index) => {
+		const updatedCoinWithLastFetchedDateRemoved = updatedCoin.Data.filter(
+			item => item.time !== coinsToFetch[index].timeTo,
+		)
+		await historicQuotesCollection.updateOne(
+			{ symbol: coinsToFetch[index].symbol },
+			{
+				$set: {
+					timeTo: updatedCoin.TimeTo,
+				},
+				$push: {
+					history: {
+						$each: updatedCoinWithLastFetchedDateRemoved,
+					},
+				},
+			},
+			{
+				upsert: true,
+			},
+		)
+		const newCoinsList = await utilities.queryCollection(
+			historicQuotesCollection,
+			{
+				symbol: coinsToFetch[index].symbol,
+			},
+		)
+		const newCoinsHistoryQuotes = {
+			symbol: newCoinsList.symbol,
+			timeFrom: newCoinsList.TimeFrom,
+			timeTo: newCoinsList.TimeTo,
+			history: newCoinsList.Data,
+			conversionTo: 'USD',
+		}
+		utilities.updateCoinsList(newCoinsHistoryQuotes)
+	})
+}
+
+app.get('/list', async (req, res) => {
+	await getOutOfDateCoinsFromCurrentList()
+	res.send({ success: true, data: getCurrentCoins.getAll() })
 })
 
 app.post('/add_coin', async (req, res) => {
@@ -115,7 +133,7 @@ app.post('/add_coin', async (req, res) => {
 				// We don't have the lastest, so we need to get from lastFetchDate, to now
 				utilities.logger('Found coin in db, but out of date. updating...')
 				const limit = differenceInCalendarDays(startOfToday, lastFetchDate)
-				const uri = `https://min-api.cryptocompare.com/data/histoday?fsym=${symbol}&tsym=USD&limit=${limit}&`
+				const uri = `https://min-api.cryptocompare.com/data/histoday?fsym=${symbol}&tsym=USD&limit=${limit}&toTs=${TEST_TO_TS}`
 				utilities.logger(uri)
 				const coinsHistoricQuoteUpdates = await axios.get(uri)
 				const updatedHistoryWithLastFetchedDateRemoved = coinsHistoricQuoteUpdates.data.Data.filter(
@@ -154,7 +172,7 @@ app.post('/add_coin', async (req, res) => {
 		} else {
 			// We don't have the coin so we definitely need to fetch it
 			const coinsHistoricQuotes = await axios.get(
-				`https://min-api.cryptocompare.com/data/histoday?fsym=${symbol}&tsym=USD&limit=${INITIAL_HISTORY_LIMIT}`,
+				`https://min-api.cryptocompare.com/data/histoday?fsym=${symbol}&tsym=USD&limit=${INITIAL_HISTORY_LIMIT}&toTs=${TEST_TO_TS}`,
 			)
 			// We have the data, so save back to local db
 			utilities.logger('Have fetched the new coin!')

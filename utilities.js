@@ -3,7 +3,6 @@ const coins = require('./coinsList')
 
 const MONGO_URI = process.env.MONGO_URI
 const DATABASE_NAME = process.env.DATABASE_NAME
-const currentCoins = {}
 
 const getDatabaseCollection = async collectionName => {
 	try {
@@ -13,12 +12,6 @@ const getDatabaseCollection = async collectionName => {
 		console.log('Error: ', err)
 		return err
 	}
-}
-
-const getCurrentCoins = () => currentCoins
-
-const removeCoin = symbol => {
-	currentCoins = currentCoins.filter(coin => coin.code !== symbol)
 }
 
 const queryCollection = async (collection, query) => {
@@ -47,14 +40,6 @@ const logger = (message, ...args) => {
 	}
 }
 
-const updateCoinListAndReturnToUser = (res, coinsHistoricQuotes) => {
-	currentCoins[coinsHistoricQuotes.symbol] = coinsHistoricQuotes
-	res.json({
-		success: true,
-		data: coinsHistoricQuotes,
-	})
-}
-
 const symbolIsValid = symbol => isDefined(symbol) && isDefined(coins[symbol])
 
 const getSymbolErrorMessage = symbol => {
@@ -80,9 +65,7 @@ module.exports = {
 	getCurrentUTCTime,
 	isDefined,
 	logger,
-	updateCoinListAndReturnToUser,
 	symbolIsValid,
 	getSymbolErrorMessage,
 	returnError,
-	getCurrentCoins,
 }
