@@ -4,7 +4,7 @@ const express = require('express')
 const coins = require('./coinsList')
 const differenceInCalendarDays = require('date-fns/difference_in_calendar_days')
 const utilities = require('./utilities')
-const currencyList = require('./currencyList')
+const CurrencyList = require('./currencyList')
 
 const app = express()
 app.use(bodyParser.json())
@@ -12,6 +12,7 @@ app.use(bodyParser.json())
 const PORT = process.env.NODE_ENV === 'production' ? 443 : 3000
 const INITIAL_HISTORY_LIMIT = 5
 const TEST_TO_TS = 1520812800
+const currencyList = CurrencyList.new()
 
 app.get('/', (req, res) => res.send('Hello now!'))
 
@@ -100,13 +101,6 @@ const getLatestDataForCurrentCoins = async coinsToFetch => {
 			{ timeTo: updatedCoin.TimeTo },
 			{ history: { $each: updatedHistoryWithLastFetchedDateRemoved } },
 		)
-		// const newCoinsHistoryQuotes = {
-		// 	symbol: newCoinsList.symbol,
-		// 	timeFrom: newCoinsList.TimeFrom,
-		// 	timeTo: newCoinsList.TimeTo,
-		// 	history: newCoinsList.Data,
-		// 	conversionTo: 'USD',
-		// }
 		currencyList.update(newCoinList)
 	})
 }
@@ -158,14 +152,7 @@ app.post('/add_coin', async (req, res) => {
 					{ history: { $each: updatedHistoryWithLastFetchedDateRemoved } },
 				)
 				utilities.logger('Updated to db!')
-				// const newCoinsHistoryQuotes = {
-				// 	...coinsHistoricQuotes,
-				// 	timeTo: coinsHistoricQuoteUpdates.data.TimeTo,
-				// 	history: [
-				// 		...coinsHistoricQuotes.history,
-				// 		...updatedHistoryWithLastFetchedDateRemoved,
-				// 	],
-				// }
+
 				res.send({
 					success: true,
 					currencyList: currencyList.update(newCoinList),
