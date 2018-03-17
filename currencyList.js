@@ -1,12 +1,14 @@
 const currentCoins = {}
 
 const remove = symbol => {
-	currentCoins = currentCoins.filter(coin => coin.code !== symbol)
+	delete currentCoins[symbol]
 	return getAll()
 }
 
 const update = coinsHistoricQuotes => {
-	Object.assign(currentCoins, updatedCoins)
+	Object.assign(currentCoins, {
+		[coinsHistoricQuotes.symbol]: coinsHistoricQuotes,
+	})
 	return getAll()
 }
 

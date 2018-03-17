@@ -15,14 +15,14 @@ const TEST_TO_TS = 1520812800
 
 app.get('/', (req, res) => res.send('Hello now!'))
 
-app.get('/fullCoinList', (req, res) => {
+app.get('/currency_list', (req, res) => {
 	res.json({
 		success: true,
 		data: coins,
 	})
 })
 
-const getOutOfDateCoinsFromCurrentList = () => {
+const getOutOfDateCoinsFromCurrentList = async () => {
 	const today = new Date(utilities.getCurrentUTCTime())
 	const outOfDateCoins = Object.values(currencyList.getAll()).filter(
 		coin => !utilities.daysAreTheSame(today, new Date(coin.timeTo * 1000)),
@@ -31,8 +31,44 @@ const getOutOfDateCoinsFromCurrentList = () => {
 		utilities.logger(
 			`${outOfDateCoins.length} coins are out of date and need updating!`,
 		)
-		return getLatestDataForCurrentCoins(outOfDateCoins)
+		await getLatestDataForCurrentCoins(outOfDateCoins)
 	}
+}
+
+const saveToDatabase = async (symbol, set = {}, push = {}) => {
+	if (!symbol) return
+	const [
+		database,
+		historicQuotesCollection,
+	] = await utilities.getDatabaseCollection('History')
+	await historicQuotesCollection.updateOne(
+		{ symbol: coinsToFetch[index].symbol },
+		{
+			$set: set,
+			$push: push,
+		},
+		{
+			upsert: true,
+		},
+	)
+	database.close()
+	return await getOneCurrencyFromDatabase(symbol)
+}
+
+const getOneCurrencyFromDatabase = async symbol => {
+	if (!symbol) return null
+	const [
+		database,
+		historicQuotesCollection,
+	] = await utilities.getDatabaseCollection('History')
+	const currencyHistory = await utilities.queryCollection(
+		historicQuotesCollection,
+		{
+			symbol,
+		},
+	)
+	database.close()
+	return currencyHistory
 }
 
 const getLatestDataForCurrentCoins = async coinsToFetch => {
@@ -55,50 +91,29 @@ const getLatestDataForCurrentCoins = async coinsToFetch => {
 	utilities.logger('Fetched all coins!', coinsHistoricQuoteUpdates)
 
 	// Save all coins to DB and update current coin list
-	const [
-		database,
-		historicQuotesCollection,
-	] = await utilities.getDatabaseCollection('History')
-	return coinsHistoricQuoteUpdates.forEach(async (updatedCoin, index) => {
+	coinsHistoricQuoteUpdates.forEach(async (updatedCoin, index) => {
 		const updatedCoinWithLastFetchedDateRemoved = updatedCoin.Data.filter(
 			item => item.time !== coinsToFetch[index].timeTo,
 		)
-		await historicQuotesCollection.updateOne(
-			{ symbol: coinsToFetch[index].symbol },
-			{
-				$set: {
-					timeTo: updatedCoin.TimeTo,
-				},
-				$push: {
-					history: {
-						$each: updatedCoinWithLastFetchedDateRemoved,
-					},
-				},
-			},
-			{
-				upsert: true,
-			},
+		const newCoinList = await saveToDatabase(
+			coinsToFetch[index].symbol,
+			{ timeTo: updatedCoin.TimeTo },
+			{ history: { $each: updatedHistoryWithLastFetchedDateRemoved } },
 		)
-		const newCoinsList = await utilities.queryCollection(
-			historicQuotesCollection,
-			{
-				symbol: coinsToFetch[index].symbol,
-			},
-		)
-		const newCoinsHistoryQuotes = {
-			symbol: newCoinsList.symbol,
-			timeFrom: newCoinsList.TimeFrom,
-			timeTo: newCoinsList.TimeTo,
-			history: newCoinsList.Data,
-			conversionTo: 'USD',
-		}
-		utilities.updateCoinsList(newCoinsHistoryQuotes)
+		// const newCoinsHistoryQuotes = {
+		// 	symbol: newCoinsList.symbol,
+		// 	timeFrom: newCoinsList.TimeFrom,
+		// 	timeTo: newCoinsList.TimeTo,
+		// 	history: newCoinsList.Data,
+		// 	conversionTo: 'USD',
+		// }
+		currencyList.update(newCoinList)
 	})
 }
 
 app.get('/list', async (req, res) => {
 	await getOutOfDateCoinsFromCurrentList()
-	res.send({ success: true, data: getCurrentCoins.getAll() })
+	res.send({ success: true, data: currencyList.getAll() })
 })
 
 app.post('/add_coin', async (req, res) => {
@@ -108,16 +123,7 @@ app.post('/add_coin', async (req, res) => {
 	}
 	utilities.logger('Symbol is valid')
 	try {
-		const [
-			database,
-			historicQuotesCollection,
-		] = await utilities.getDatabaseCollection('History')
-		const coinsHistoricQuotes = await utilities.queryCollection(
-			historicQuotesCollection,
-			{
-				symbol,
-			},
-		)
+		const coinsHistoricQuotes = await getOneCurrencyFromDatabase(symbol)
 		utilities.logger(
 			`historicQuotes is defined: ${utilities.isDefined(coinsHistoricQuotes)}`,
 		)
@@ -128,7 +134,10 @@ app.post('/add_coin', async (req, res) => {
 			const startOfToday = new Date(utilities.getCurrentUTCTime())
 			if (utilities.daysAreTheSame(lastFetchDate, startOfToday)) {
 				utilities.logger('Found coin in db, and is current. Returning to user.')
-				utilities.updateCoinListAndReturnToUser(res, coinsHistoricQuotes)
+				res.send({
+					success: true,
+					currencyList: currencyList.update(coinsHistoricQuotes),
+				})
 			} else {
 				// We don't have the lastest, so we need to get from lastFetchDate, to now
 				utilities.logger('Found coin in db, but out of date. updating...')
@@ -142,32 +151,25 @@ app.post('/add_coin', async (req, res) => {
 				utilities.logger(`Old timeTo: ${coinsHistoricQuotes.timeTo}`)
 				utilities.logger(`New timeTo: ${coinsHistoricQuoteUpdates.data.TimeTo}`)
 				// utilities.logger(updatedHistoryWithLastFetchedDateRemoved)
-				const update = await historicQuotesCollection.updateOne(
-					{ symbol },
-					{
-						$set: {
-							timeTo: coinsHistoricQuoteUpdates.data.TimeTo,
-						},
-						$push: {
-							history: {
-								$each: updatedHistoryWithLastFetchedDateRemoved,
-							},
-						},
-					},
-					{
-						upsert: true,
-					},
+				// TODO: compare newCoinList to newCoinsHistoryQuotes
+				const newCoinList = saveToDatabase(
+					symbol,
+					{ timeTo: coinsHistoricQuoteUpdates.data.TimeTo },
+					{ history: { $each: updatedHistoryWithLastFetchedDateRemoved } },
 				)
 				utilities.logger('Updated to db!')
-				const newCoinsHistoryQuotes = {
-					...coinsHistoricQuotes,
-					timeTo: coinsHistoricQuoteUpdates.data.TimeTo,
-					history: [
-						...coinsHistoricQuotes.history,
-						...updatedHistoryWithLastFetchedDateRemoved,
-					],
-				}
-				utilities.updateCoinListAndReturnToUser(res, newCoinsHistoryQuotes)
+				// const newCoinsHistoryQuotes = {
+				// 	...coinsHistoricQuotes,
+				// 	timeTo: coinsHistoricQuoteUpdates.data.TimeTo,
+				// 	history: [
+				// 		...coinsHistoricQuotes.history,
+				// 		...updatedHistoryWithLastFetchedDateRemoved,
+				// 	],
+				// }
+				res.send({
+					success: true,
+					currencyList: currencyList.update(newCoinList),
+				})
 			}
 		} else {
 			// We don't have the coin so we definitely need to fetch it
@@ -176,26 +178,19 @@ app.post('/add_coin', async (req, res) => {
 			)
 			// We have the data, so save back to local db
 			utilities.logger('Have fetched the new coin!')
-			const newCoinsHistoryQuotes = {
+			const newCoinList = saveToDatabase(symbol, {
 				symbol,
 				timeFrom: coinsHistoricQuotes.data.TimeFrom,
 				timeTo: coinsHistoricQuotes.data.TimeTo,
 				history: coinsHistoricQuotes.data.Data,
 				conversionTo: 'USD',
-			}
-			const update = await historicQuotesCollection.updateOne(
-				{ symbol },
-				{
-					$set: newCoinsHistoryQuotes,
-				},
-				{
-					upsert: true,
-				},
-			)
+			})
 			utilities.logger('Updated new coin to db!')
-			utilities.updateCoinListAndReturnToUser(res, newCoinsHistoryQuotes)
+			res.send({
+				success: true,
+				data: currencyList.update(newCoinList),
+			})
 		}
-		database.close()
 	} catch (err) {
 		utilities.returnError(res, err)
 	}
@@ -203,13 +198,12 @@ app.post('/add_coin', async (req, res) => {
 
 app.post('/remove_coin', (req, res) => {
 	const symbol = req.body.symbol
-	utilities.removeCoin(symbol)
 	res.json({
 		success: true,
+		data: currencyList.remove(symbol),
 	})
 })
 
 app.listen(PORT, () => {
-	// TODO: Get the last_fetched_date from the database
 	utilities.logger(`Example app listening on port ${PORT}!`)
 })
