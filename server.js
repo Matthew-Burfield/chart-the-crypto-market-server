@@ -1,18 +1,30 @@
 const axios = require('axios')
 const bodyParser = require('body-parser')
+const cors = require('cors')
 const express = require('express')
+
 const coins = require('./coinsList')
 const differenceInCalendarDays = require('date-fns/difference_in_calendar_days')
 const utilities = require('./utilities')
 const CurrencyList = require('./currencyList')
 
 const app = express()
-app.use(bodyParser.json())
-
-const PORT = process.env.NODE_ENV === 'production' ? 443 : 3000
+const PORT = process.env.NODE_ENV === 'production' ? 443 : 3001
 const INITIAL_HISTORY_LIMIT = 5
 const TEST_TO_TS = 1520812800
 const currencyList = CurrencyList.new()
+const ORIGIN =
+	process.env.NODE_ENV === 'production'
+		? process.env.ORIGIN
+		: process.env.ORIGIN_DEV
+
+app.use(
+	cors({
+		origin: ORIGIN,
+		optionsSuccessStatus: 200,
+	}),
+)
+app.use(bodyParser.json())
 
 app.get('/', (req, res) => res.send('Hello now!'))
 
@@ -20,6 +32,16 @@ app.get('/currency_list', (req, res) => {
 	res.json({
 		success: true,
 		data: coins,
+	})
+})
+
+app.get('/top_20', (req, res) => {
+	const data = axios
+		.get('https://min-api.cryptocompare.com/data/top/volumes?tsym=USD&limit=20')
+		.then(response => response.data.Data)
+	res.json({
+		success: true,
+		data,
 	})
 })
 
