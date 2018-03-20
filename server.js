@@ -35,13 +35,19 @@ app.get('/currency_list', (req, res) => {
 	})
 })
 
-app.get('/top_20', (req, res) => {
-	const data = axios
+app.get('/top_20', async (req, res) => {
+	const data = await axios
 		.get('https://min-api.cryptocompare.com/data/top/volumes?tsym=USD&limit=20')
 		.then(response => response.data.Data)
 	res.json({
 		success: true,
-		data,
+		data: data.filter(item => (
+			coins[item.SYMBOL]
+		)).map(item => ({
+			name: item.NAME,
+			symbol: item.SYMBOL,
+			image_url: coins[item.SYMBOL].ImageUrl,
+		})),
 	})
 })
 
