@@ -8,21 +8,15 @@ const differenceInCalendarDays = require('date-fns/difference_in_calendar_days')
 const utilities = require('./utilities')
 const CurrencyList = require('./currencyList')
 
-console.log(ORIGIN)
-console.log(ORIGIN_DEV)
 const app = express()
 const PORT = process.env.NODE_ENV === 'production' ? 443 : 3001
 const INITIAL_HISTORY_LIMIT = 5
 const TEST_TO_TS = 1520812800
 const currencyList = CurrencyList.new()
-const ORIGIN =
-	process.env.NODE_ENV === 'production'
-		? process.env.ORIGIN
-		: process.env.ORIGIN_DEV
 
 app.use(
 	cors({
-		origin: ORIGIN,
+		origin: process.env.ORIGIN,
 		optionsSuccessStatus: 200,
 	}),
 )
