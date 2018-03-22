@@ -8,6 +8,8 @@ const differenceInCalendarDays = require('date-fns/difference_in_calendar_days')
 const utilities = require('./utilities')
 const CurrencyList = require('./currencyList')
 
+console.log(ORIGIN)
+console.log(ORIGIN_DEV)
 const app = express()
 const PORT = process.env.NODE_ENV === 'production' ? 443 : 3001
 const INITIAL_HISTORY_LIMIT = 5
@@ -41,9 +43,7 @@ app.get('/top_20', async (req, res) => {
 		.then(response => response.data.Data)
 	res.json({
 		success: true,
-		data: data.filter(item => (
-			coins[item.SYMBOL]
-		)).map(item => ({
+		data: data.filter(item => coins[item.SYMBOL]).map(item => ({
 			name: item.NAME,
 			symbol: item.SYMBOL,
 			image_url: coins[item.SYMBOL].ImageUrl,
