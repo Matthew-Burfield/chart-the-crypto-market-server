@@ -65,7 +65,7 @@ const saveToDatabase = async (symbol, set = {}, push = {}) => {
 		historicQuotesCollection,
 	] = await utilities.getDatabaseCollection('History')
 	await historicQuotesCollection.updateOne(
-		{ symbol: coinsToFetch[index].symbol },
+		{ symbol },
 		{
 			$set: set,
 			$push: push,
@@ -118,12 +118,12 @@ const getLatestDataForCurrentCoins = async coinsToFetch => {
 		const updatedCoinWithLastFetchedDateRemoved = updatedCoin.Data.filter(
 			item => item.time !== coinsToFetch[index].timeTo,
 		)
-		const newCoinList = await saveToDatabase(
+		const newCurrencyAdded = await await saveToDatabase(
 			coinsToFetch[index].symbol,
 			{ timeTo: updatedCoin.TimeTo },
 			{ history: { $each: updatedHistoryWithLastFetchedDateRemoved } },
 		)
-		currencyList.update(newCoinList)
+		currencyList.update(newCurrencyAdded)
 	})
 }
 
@@ -150,6 +150,7 @@ app.post('/add_coin', async (req, res) => {
 			const startOfToday = new Date(utilities.getCurrentUTCTime())
 			if (utilities.daysAreTheSame(lastFetchDate, startOfToday)) {
 				utilities.logger('Found coin in db, and is current. Returning to user.')
+				// TODO: this needs to be updated - currencyList.update accepts the entire updated list
 				res.send({
 					success: true,
 					currencyList: currencyList.update(coinsHistoricQuotes),
@@ -167,8 +168,8 @@ app.post('/add_coin', async (req, res) => {
 				utilities.logger(`Old timeTo: ${coinsHistoricQuotes.timeTo}`)
 				utilities.logger(`New timeTo: ${coinsHistoricQuoteUpdates.data.TimeTo}`)
 				// utilities.logger(updatedHistoryWithLastFetchedDateRemoved)
-				// TODO: compare newCoinList to newCoinsHistoryQuotes
-				const newCoinList = saveToDatabase(
+				// TODO: compare newCurrencyAdded to newCoinsHistoryQuotes
+				const newCurrencyAdded = await saveToDatabase(
 					symbol,
 					{ timeTo: coinsHistoricQuoteUpdates.data.TimeTo },
 					{ history: { $each: updatedHistoryWithLastFetchedDateRemoved } },
@@ -177,7 +178,7 @@ app.post('/add_coin', async (req, res) => {
 
 				res.send({
 					success: true,
-					currencyList: currencyList.update(newCoinList),
+					currencyList: currencyList.update(newCurrencyAdded),
 				})
 			}
 		} else {
@@ -187,7 +188,7 @@ app.post('/add_coin', async (req, res) => {
 			)
 			// We have the data, so save back to local db
 			utilities.logger('Have fetched the new coin!')
-			const newCoinList = saveToDatabase(symbol, {
+			const newCurrencyAdded = await saveToDatabase(symbol, {
 				symbol,
 				timeFrom: coinsHistoricQuotes.data.TimeFrom,
 				timeTo: coinsHistoricQuotes.data.TimeTo,
@@ -197,7 +198,7 @@ app.post('/add_coin', async (req, res) => {
 			utilities.logger('Updated new coin to db!')
 			res.send({
 				success: true,
-				data: currencyList.update(newCoinList),
+				data: currencyList.update(newCurrencyAdded),
 			})
 		}
 	} catch (err) {
